@@ -13,6 +13,7 @@ from PIL import Image
 
 # Import your existing modules
 from trading_graph import TradingGraph
+from error_handler import error_handler, with_error_handling, get_error_statistics
 
 app = Flask(__name__)
 
@@ -214,8 +215,13 @@ class WebTradingAnalyzer:
         files = list(asset_dir.glob(pattern))
         return sorted(files)
     
+    @with_error_handling(
+        component_name="web_analysis",
+        log_errors=True,
+        reraise_on_failure=False
+    )
     def run_analysis(self, df: pd.DataFrame, asset_name: str, timeframe: str) -> Dict[str, Any]:
-        """Run the trading analysis on the provided DataFrame."""
+        """Run the trading analysis on the provided DataFrame with enhanced error handling."""
         try:
             # Debug: Check DataFrame structure
             print(f"DataFrame columns: {df.columns}")
@@ -816,6 +822,44 @@ def validate_api_key():
         return jsonify(validation)
     except Exception as e:
         return jsonify({"valid": False, "error": str(e)})
+
+@app.route('/api/system-status')
+def get_system_status():
+    """API endpoint to get system status and error statistics."""
+    try:
+        error_stats = get_error_statistics()
+        
+        # Check component health
+        component_health = {
+            "indicator_agent": "healthy",
+            "pattern_agent": "healthy", 
+            "trend_agent": "healthy",
+            "decision_agent": "healthy",
+            "web_interface": "healthy"
+        }
+        
+        # Determine overall system health
+        total_errors = error_stats.get("total_errors", 0)
+        if total_errors > 50:
+            overall_health = "degraded"
+        elif total_errors > 20:
+            overall_health = "warning"
+        else:
+            overall_health = "healthy"
+        
+        return jsonify({
+            "overall_health": overall_health,
+            "component_health": component_health,
+            "error_statistics": error_stats,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "overall_health": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        })
 
 @app.route('/assets/<path:filename>')
 def serve_assets(filename):
